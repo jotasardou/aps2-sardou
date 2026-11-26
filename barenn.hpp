@@ -76,6 +76,17 @@ public:
         return out;
     }
 
+    vector<float> Inferir(const vector<float>& input) const {
+        vector<float> out(out_features);
+        for (int i = 0; i < out_features; ++i) {
+            float sum = bias[i];
+            for (int j = 0; j < in_features; ++j)
+                sum += input[j] * weights[i][j];
+            out[i] = final ? sum : max(0.0f, sum);
+        }
+        return out;
+    }
+
     vector<float> Backward(vector<float> grad_out, float learning_rate) {
         // Delta é o gradiente da perda em relação à soma antes da ativação.
         // Na ReLU, o gradiente passa apenas quando essa soma é positiva.
@@ -169,7 +180,7 @@ float perda(const vector<float>& escores, int rotulo,
     return total;
 }
 
-void avaliar(DenseLayer& l1, DenseLayer& l2, DenseLayer& l3,
+void avaliar(const DenseLayer& l1, const DenseLayer& l2, const DenseLayer& l3,
              const vector<Amostra>& teste) {
     struct Exemplo {
         size_t linha;
@@ -188,10 +199,20 @@ void avaliar(DenseLayer& l1, DenseLayer& l2, DenseLayer& l3,
     size_t exemplos_erro = 0;
     double perda_total = 0;
 
-    // Só fazemos forward aqui. Os pesos ficam fixos.
+    const auto inicio_inferencia = chrono::steady_clock::now();
+    vector<vector<float>> escores_teste(teste.size());
+    #ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+    #endif
+    for (size_t i = 0; i < teste.size(); ++i) {
+        escores_teste[i] = l3.Inferir(l2.Inferir(l1.Inferir(teste[i].imagem)));
+    }
+    const chrono::duration<double> tempo_inferencia =
+        chrono::steady_clock::now() - inicio_inferencia;
+
     for (size_t i = 0; i < teste.size(); ++i) {
         const auto& amostra = teste[i];
-        auto escores = l3.Forward(l2.Forward(l1.Forward(amostra.imagem)));
+        const auto& escores = escores_teste[i];
         // O índice do maior escore indica a classe prevista.
         int previsto = static_cast<int>(
             max_element(escores.begin(), escores.end()) - escores.begin());
@@ -215,6 +236,9 @@ void avaliar(DenseLayer& l1, DenseLayer& l2, DenseLayer& l3,
             ++exemplos_tipo;
         }
     }
+
+    cout << "Tempo de inferencia " << setprecision(6)
+         << tempo_inferencia.count() << " s\n";
 
     cout << "\nAVALIACAO FINAL\n"
          << "Acuracia " << setprecision(1) << 100.0 * acertos / teste.size()
