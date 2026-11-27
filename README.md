@@ -41,10 +41,24 @@ Tentativas sem ganho: [ordem dos laços (#1)](https://github.com/jotasardou/aps2
 [delta local (#2)](https://github.com/jotasardou/aps2-sardou/issues/2) e
 [multicore no treino (#5)](https://github.com/jotasardou/aps2-sardou/issues/5).
 Os resultados negativos foram registrados; essas alterações não fazem parte da versão final.
+Os testes e suas reversões estão preservados no histórico:
+
+| Experimento | Código testado | Restauração |
+|---|---|---|
+| Ordem dos laços (#1) | [b24d64a](https://github.com/jotasardou/aps2-sardou/commit/b24d64a) | [5ccc1ec](https://github.com/jotasardou/aps2-sardou/commit/5ccc1ec) |
+| Delta local (#2) | [74f3a84](https://github.com/jotasardou/aps2-sardou/commit/74f3a84) | [b2ea06a](https://github.com/jotasardou/aps2-sardou/commit/b2ea06a) |
+| Multicore por chamada (#5) | [27a78a9](https://github.com/jotasardou/aps2-sardou/commit/27a78a9) | [b02ee03](https://github.com/jotasardou/aps2-sardou/commit/b02ee03) |
+| Equipe persistente (#5) | [250762a](https://github.com/jotasardou/aps2-sardou/commit/250762a) | [b02ee03](https://github.com/jotasardou/aps2-sardou/commit/b02ee03) |
+
+Para reproduzir cada tentativa, usar seu commit e os comandos/condições da Issue.
+Esses commits registram retrospectivamente os fontes testados; não representam
+novas medições. As reversões permitem integrar o histórico sem manter as regressões.
 
 ## Corretude e limites
 
 - Avaliação: **1.717/1.797 acertos (95,5%)**, perda impressa de 0,0432.
+- Validação final: job **31084**, CPU OpenMP com quatro threads e CUDA.
+  Saídas (excluindo tempos) e os 2.778 parâmetros finais coincidiram exatamente.
 - As versões CUDA foram comparadas à CPU: os **2.778 pesos e vieses finais**
   coincidiram em representação hexadecimal nos testes descritos nas Issues.
 - A inferência OpenMP preservou os **17.970 escores**. No `compute10`, a avaliação
