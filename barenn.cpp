@@ -72,25 +72,28 @@ public:
                              : grad_out[i] * (last_z[i] > 0.0f ? 1.0f : 0.0f);
         }
 
-        // O gradiente da entrada usa os pesos anteriores à atualização.
         vector<float> grad_in(in_features);
-        for (int i = 0; i < in_features; ++i) {
-            float sum = 0;
-            for (int j = 0; j < out_features; ++j) {
-                sum += delta[j] * weights[j][i];
+        #pragma omp parallel
+        {
+            #pragma omp for schedule(static)
+            for (int i = 0; i < in_features; ++i) {
+                float sum = 0;
+                for (int j = 0; j < out_features; ++j) {
+                    sum += delta[j] * weights[j][i];
+                }
+                grad_in[i] = sum;
             }
-            grad_in[i] = sum;
-        }
 
-        // SGD por amostra. O gradiente do peso é delta vezes a entrada.
-        // O gradiente do viés é o próprio delta.
-        for (int i = 0; i < out_features; ++i) {
-            const float delta_atual = delta[i];
-            #pragma omp simd
-            for (int j = 0; j < in_features; ++j) {
-                weights[i][j] -= learning_rate * (delta_atual * last_input[j]);
+            // A barreira implícita protege os pesos usados no gradiente.
+            #pragma omp for schedule(static)
+            for (int i = 0; i < out_features; ++i) {
+                const float delta_atual = delta[i];
+                #pragma omp simd
+                for (int j = 0; j < in_features; ++j) {
+                    weights[i][j] -= learning_rate * (delta_atual * last_input[j]);
+                }
+                bias[i] -= learning_rate * delta_atual;
             }
-            bias[i] -= learning_rate * delta_atual;
         }
         return grad_in;
     }
