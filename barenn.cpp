@@ -63,40 +63,33 @@ public:
         return out;
     }
 
-    vector<float> Backward(vector<float> grad_out, float learning_rate) {
-        // Delta é o gradiente da perda em relação à soma antes da ativação.
-        // Na ReLU, o gradiente passa apenas quando essa soma é positiva.
-        vector<float> delta(out_features);
+    void Backward(const vector<float>& grad_out, float learning_rate,
+                  vector<float>& delta, vector<float>& grad_in) {
+        #pragma omp for schedule(static)
         for (int i = 0; i < out_features; ++i) {
             delta[i] = final ? grad_out[i]
-                             : grad_out[i] * (last_z[i] > 0.0f ? 1.0f : 0.0f);
+                : grad_out[i] * (last_z[i] > 0.0f ? 1.0f : 0.0f);
         }
-
-        vector<float> grad_in(in_features);
-        #pragma omp parallel
-        {
-            #pragma omp for schedule(static)
-            for (int i = 0; i < in_features; ++i) {
-                float sum = 0;
-                for (int j = 0; j < out_features; ++j) {
-                    sum += delta[j] * weights[j][i];
-                }
-                grad_in[i] = sum;
+        #pragma omp for schedule(static)
+        for (int i = 0; i < in_features; ++i) {
+            float sum = 0;
+            for (int j = 0; j < out_features; ++j) {
+                sum += delta[j] * weights[j][i];
             }
-
-            // A barreira implícita protege os pesos usados no gradiente.
-            #pragma omp for schedule(static)
-            for (int i = 0; i < out_features; ++i) {
-                const float delta_atual = delta[i];
-                #pragma omp simd
-                for (int j = 0; j < in_features; ++j) {
-                    weights[i][j] -= learning_rate * (delta_atual * last_input[j]);
-                }
-                bias[i] -= learning_rate * delta_atual;
-            }
+            grad_in[i] = sum;
         }
-        return grad_in;
+        // A barreira anterior protege os pesos usados no gradiente.
+        #pragma omp for schedule(static)
+        for (int i = 0; i < out_features; ++i) {
+            const float delta_atual = delta[i];
+            #pragma omp simd
+            for (int j = 0; j < in_features; ++j) {
+                weights[i][j] -= learning_rate * (delta_atual * last_input[j]);
+            }
+            bias[i] -= learning_rate * delta_atual;
+        }
     }
+
 };
 
 struct Amostra {
@@ -278,22 +271,29 @@ int main(int argc, char** argv) {
         vector<float> gradiente(Barenn::classes);
         array<double, epocas> perdas{};
 
-        // A medição inclui forward, perda e backward de todas as épocas.
-        const auto inicio = chrono::steady_clock::now();
-        for (int epoca = 0; epoca < epocas; ++epoca) {
-            double perda_total = 0;
-            // Uma época percorre todo o conjunto na ordem do arquivo.
-            for (const auto& amostra : treino) {
-                auto escores = l3.Forward(l2.Forward(l1.Forward(amostra.imagem)));
-                perda_total += Barenn::perda(escores, amostra.rotulo, &gradiente);
+        vector<float> delta1(32), delta2(16), delta3(10);
+        vector<float> grad1(64), grad2(32), grad3(16);
+        double perda_total = 0;
 
-                // Propaga o gradiente da última camada até a primeira.
-                // Cada Backward também atualiza os parâmetros da sua camada.
-                auto grad3 = l3.Backward(gradiente, taxa);
-                auto grad2 = l2.Backward(grad3, taxa);
-                l1.Backward(grad2, taxa);
+        const auto inicio = chrono::steady_clock::now();
+        #pragma omp parallel
+        {
+            for (int epoca = 0; epoca < epocas; ++epoca) {
+                #pragma omp single
+                perda_total = 0;
+                for (const auto& amostra : treino) {
+                    #pragma omp single
+                    {
+                        auto escores = l3.Forward(l2.Forward(l1.Forward(amostra.imagem)));
+                        perda_total += Barenn::perda(escores, amostra.rotulo, &gradiente);
+                    }
+                    l3.Backward(gradiente, taxa, delta3, grad3);
+                    l2.Backward(grad3, taxa, delta2, grad2);
+                    l1.Backward(grad2, taxa, delta1, grad1);
+                }
+                #pragma omp single
+                perdas[epoca] = perda_total / treino.size();
             }
-            perdas[epoca] = perda_total / treino.size();
         }
         const chrono::duration<double> tempo = chrono::steady_clock::now() - inicio;
 
