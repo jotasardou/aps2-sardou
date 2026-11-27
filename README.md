@@ -1,3 +1,90 @@
+# APS2 — resultados
+
+## Comparação das versões
+
+| Versão | Treino: mediana [mín.–máx.] | Total CUDA: mediana |
+|---|---:|---:|
+| Legado (`27f88c4`) | 0,5566 s [0,5558–0,5571] | — |
+| CPU SIMD (`v0.1`) | 0,3990 s [0,3987–0,3995] | — |
+| CUDA inicial (`v0.2`) | 1,9116 s [1,9060–1,9605] | 3,5657 s |
+| CUDA por época (`v0.3`) | 1,7160 s [1,6883–1,7452] | 3,3707 s |
+| CUDA compartilhada + padding (`v0.4`) | 0,7582 s [0,7558–0,7589] | 2,4091 s |
+| CPU SIMD + inferência OpenMP (`v0.5`) | 0,3995 s [0,3984–0,3997] | — |
+
+Job de reprodução: **31083**. Todas as versões preservaram a saída impressa.
+O legado está no commit [27f88c4](https://github.com/jotasardou/aps2-sardou/commit/27f88c4).
+
+Medições no Franky, nó `compute20`: Intel i9-14900 e RTX A1000 de 8 GB.
+GCC 14.2.0 e CUDA 12.8.1; quatro CPUs e uma GPU alocadas. Um aquecimento
+por versão e cinco rodadas com ordem rotativa, usando os mesmos dados
+(3.823 imagens de treino, 1.797 de teste), 51 épocas, taxa 0,02 e semente 1337.
+CPU: `-std=c++17 -O2 -g -fopenmp`; CUDA:
+`-std=c++17 -O2 -arch=sm_86 --fmad=false`.
+
+O tempo de treino exclui leitura e avaliação. O total CUDA inclui preparação,
+alocações, transferências, treino e liberação; não é o tempo total do programa.
+A GPU melhorou entre versões, mas continua mais lenta que a CPU SIMD.
+Os valores desta tabela são de uma nova execução consolidada; os experimentos
+originais permanecem nas Issues com seus próprios ambientes e medições.
+
+## Issues e marcos
+
+| Bloco | Discussão | Versão validada |
+|---|---|---|
+| CPU SIMD e baseline | [#3](https://github.com/jotasardou/aps2-sardou/issues/3) | [v0.1-cpu-simd](https://github.com/jotasardou/aps2-sardou/releases/tag/v0.1-cpu-simd) |
+| CUDA inicial | [#6](https://github.com/jotasardou/aps2-sardou/issues/6) | [v0.2-cuda-inicial](https://github.com/jotasardou/aps2-sardou/releases/tag/v0.2-cuda-inicial) |
+| Kernel por época | [#8](https://github.com/jotasardou/aps2-sardou/issues/8) | [v0.3-cuda-epoca](https://github.com/jotasardou/aps2-sardou/releases/tag/v0.3-cuda-epoca) |
+| Compartilhada e padding | [#10](https://github.com/jotasardou/aps2-sardou/issues/10) | [v0.4-cuda-shared-padding](https://github.com/jotasardou/aps2-sardou/releases/tag/v0.4-cuda-shared-padding) |
+| Inferência multicore | [#12](https://github.com/jotasardou/aps2-sardou/issues/12) | [v0.5-cpu-inferencia](https://github.com/jotasardou/aps2-sardou/releases/tag/v0.5-cpu-inferencia) |
+
+Tentativas sem ganho: [ordem dos laços (#1)](https://github.com/jotasardou/aps2-sardou/issues/1),
+[delta local (#2)](https://github.com/jotasardou/aps2-sardou/issues/2) e
+[multicore no treino (#5)](https://github.com/jotasardou/aps2-sardou/issues/5).
+Os resultados negativos foram registrados; essas alterações não fazem parte da versão final.
+
+## Corretude e limites
+
+- Avaliação: **1.717/1.797 acertos (95,5%)**, perda impressa de 0,0432.
+- As versões CUDA foram comparadas à CPU: os **2.778 pesos e vieses finais**
+  coincidiram em representação hexadecimal nos testes descritos nas Issues.
+- A inferência OpenMP preservou os **17.970 escores**. No `compute10`, a avaliação
+  completa caiu de 1,314 ms para 0,639 ms com quatro threads (2,06×).
+  Esse ganho é restrito à avaliação, não ao treino nem ao programa inteiro.
+- O treino multicore não trouxe ganho nas duas estratégias testadas.
+- Foram usados Callgrind e Nsight Systems. O Nsight Compute retornou
+  `ERR_NVGPUCTRPERM`; não temos contadores de cache nem ocupação real.
+  Não foram alteradas permissões do cluster.
+
+## Compilar e executar um marco
+
+Após `git checkout <tag>`, compilar na raiz:
+
+```bash
+# CPU: em todas as versões.
+g++ -std=c++17 -O2 -g -fopenmp barenn.cpp -o barenn-cpu
+
+# CUDA: a partir de v0.2-cuda-inicial; alvo RTX A1000.
+nvcc -std=c++17 -O2 -arch=sm_86 --fmad=false barenn.cu -o barenn-cuda
+```
+
+No Franky, carregar GCC 14.2.0/CUDA 12.8.1 para compilar e disponibilizar
+suas bibliotecas em execução. Submeter pelo Slurm, sem executar o treino no head-node:
+
+```bash
+OMP_NUM_THREADS=4 OMP_DYNAMIC=false OMP_PLACES=cores OMP_PROC_BIND=close \
+srun --partition=sunny_cpu --ntasks=1 --cpus-per-task=4 --mem=2G \
+     --time=00:05:00 --cpu-bind=cores ./barenn-cpu optdigits.tra optdigits.tes
+
+srun --partition=sunny_gpu --gres=gpu:1 --ntasks=1 --cpus-per-task=1 \
+     --mem=2G --time=00:05:00 ./barenn-cuda optdigits.tra optdigits.tes
+```
+
+Para reproduzir os tempos, registrar o nó/hardware, fazer um aquecimento,
+repetir cinco vezes e usar a mediana. Saídas e relatórios completos permanecem
+no Franky; os dados de cada experimento estão registrados nas Issues.
+
+---
+
 # Projeto Barenn: O Legado, a Sobrevivência e o Salto para a GPU
 
 Era uma segunda-feira aparentemente tranquila quando a demanda chegou à sua mesa. A liderança técnica se aproximou com um sorriso contido e soltou aquela frase clássica que faz qualquer engenheiro gelar por dentro:
